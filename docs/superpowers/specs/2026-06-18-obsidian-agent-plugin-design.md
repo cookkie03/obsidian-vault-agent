@@ -27,14 +27,22 @@ Host/porta/provider scelti nei plugin settings (es. URL Tailscale della macchina
 ### `tools/`
 Registry di tool con schema JSON per function-calling:
 - `search_notes` — full-text + ricerca su backlink/grafo
-- `read_note`
+- `read_note` — solo testo; eventuali `![[img]]` embedded restano riferimenti testuali, non vengono inlineate
+- `read_image` — read-only, richiamato esplicitamente dal modello per "vedere" un'immagine del vault (path → content block multimodale)
 - `create_note` (mutante → genera pending diff)
-- `edit_note` (mutante → genera pending diff)
+- `edit_note` (mutante → genera pending diff, formato op-list con anchor testuale; fallback a full-content su errore di parsing/applicazione)
 - `list_folder`
 - `get_frontmatter` / `set_frontmatter` (mutante)
 - `manage_tags` (mutante)
 
 Tool read-only eseguiti immediatamente; tool mutanti restituiscono un diff testuale senza scrivere sul filesystem.
+
+Tutti i tool filesystem operano solo via `app.vault`/`app.vault.adapter` (mai `fs` diretto) e rifiutano a priori path con `..` o che iniziano per `/`.
+
+### `@path` mention in chat
+Digitando `@` nell'input della chat si apre una dropdown con fuzzy-match lessicale (subsequence match, stile quick-switcher di Obsidian) sui path del vault, aggiornata ad ogni keystroke. Nessuna ricerca semantica/embeddings. Alla selezione:
+- se è un file → il contenuto viene ingerito nel messaggio come se fosse il risultato di `read_note` (stesso trattamento delle immagini embedded: niente inlining automatico di immagini referenziate nel file citato).
+- se è una cartella → il contenuto viene ingerito come se fosse il risultato di `list_folder`.
 
 ### `agent/`
 Loop di orchestrazione:
@@ -65,6 +73,14 @@ Utente → side panel → agent loop → provider (remoto) → [tool call?] → 
 - Unit test sui tool (create/edit/diff/search/frontmatter/tags) contro un vault di fixture isolato (cartella temporanea), mai contro il vault reale.
 - Unit test sul loop agent con provider mockato (risposte HTTP fisse): tool call → risultato → tool call → risposta finale; più i casi di errore (provider down, tool malformato, conflitto di scrittura).
 - Test manuale end-to-end nel vault reale per side panel, drag&drop immagini, e integrazione con il provider remoto reale (OpenAI-compat e Ollama-native).
+
+## System prompt, skill e comandi
+
+- System prompt base minimale, specifico al ruolo "agente del vault", hardcoded nel plugin (regole non negoziabili: human-in-the-loop sui mutanti, scope tool, formato diff).
+- Append opzionale dal contenuto di `AGENTS.md` in root del vault, se esiste — istruzioni di contesto personali dell'utente, non può sovrascrivere le regole base.
+- Skill custom: note in `.agents/skills/*.md`, testo libero. Invocate in chat con `/nome-skill [argomenti]`, intercettate dal plugin (non tool-call LLM) e iniettate come istruzione utente nel messaggio successivo. Creazione/editing manuale dell'utente in v1, nessun tool per crearle.
+- Comandi built-in intercettati lato plugin: `/resume [id]` (lista o riprende una sessione da `.agents/chats/`, troncando dal fondo se non entra nel budget di contesto), `/clear` (salva la sessione corrente non vuota e ne apre una nuova), `/compact` (riassume via modello i messaggi più vecchi, mantenendo gli ultimi N), `/help` (lista skill + comandi disponibili).
+- Gestione budget di contesto: token reali da `usage`/`eval_count` del provider; compact automatico al superamento soglia (default 90%, configurabile in `.agents/config.json`), sempre annunciato in chat, mai silenzioso.
 
 ## Fuori scope v1 (futuro)
 
