@@ -1,6 +1,7 @@
 import yaml from "js-yaml";
 import { VaultFS } from "./vault-fs";
 import { assertSafePath } from "./path-guard";
+import { PendingChange, snapshotHash } from "./pending-change";
 
 const FRONTMATTER_PATTERN = /^---\n([\s\S]*?)\n---\n?/;
 
@@ -20,4 +21,16 @@ export async function getFrontmatter(fs: VaultFS, path: string): Promise<Record<
   assertSafePath(path);
   const content = await fs.read(path);
   return splitFrontmatter(content).frontmatter;
+}
+
+export async function proposeSetFrontmatter(
+  fs: VaultFS,
+  path: string,
+  updates: Record<string, unknown>
+): Promise<PendingChange> {
+  assertSafePath(path);
+  const currentContent = await fs.read(path);
+  const { frontmatter, body } = splitFrontmatter(currentContent);
+  const newContent = joinFrontmatter({ ...frontmatter, ...updates }, body);
+  return { path, newContent, baseSnapshotHash: snapshotHash(currentContent), kind: "edit" };
 }
