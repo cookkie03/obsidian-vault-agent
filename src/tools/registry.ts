@@ -32,6 +32,10 @@ export class ToolRegistry {
     ];
   }
 
+  fsForApply(): VaultFS {
+    return this.fs;
+  }
+
   async dispatch(call: ToolCall): Promise<DispatchOutcome> {
     const args = call.arguments as any;
     if (READ_ONLY_TOOLS.has(call.name)) {
