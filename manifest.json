@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-vault-agent",
+  "name": "Vault Agent",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "AI agent with tool-use over your vault, backed by a remote multimodal model.",
+  "author": "Luca",
+  "isDesktopOnly": false
+}
