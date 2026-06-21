@@ -15,3 +15,6 @@ L'op-list con anchor è più tollerante agli errori di un modello piccolo rispet
 ## Alternatives considered
 - Unified diff testuale: scartato come primario, troppo fragile con modelli piccoli sull'aritmetica delle righe.
 - Full-content sempre: scartato come primario, spreca token su edit piccoli in note lunghe.
+
+## Addendum (implementazione)
+Il rilevamento conflitti (hash dello snapshot) non usa SHA-256 reale: `node:crypto` non è risolvibile nel bundle browser/mobile di un plugin Obsidian (`isDesktopOnly: false`). Si usa un fingerprint sincrono puro-JS (FNV-1a a 64 bit, due metà a 32 bit). Accettabile perché l'hash serve solo a rilevare modifiche concorrenti accidentali, non a resistere a collisioni intenzionali.
