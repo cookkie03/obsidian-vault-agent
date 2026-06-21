@@ -25,3 +25,20 @@ export function fuzzyMatchPaths(paths: string[], query: string): string[] {
   const lowerQuery = query.toLowerCase();
   return paths.filter((path) => isSubsequence(lowerQuery, path.toLowerCase()));
 }
+
+export interface MentionTrigger {
+  triggerStart: number;
+  query: string;
+}
+
+// Pure cursor-text logic so the side panel's @-mention dropdown wiring
+// (DOM-only, manual-test-only) has a tested core to call into.
+export function detectMentionTrigger(text: string, cursorPos: number): MentionTrigger | null {
+  const upToCursor = text.slice(0, cursorPos);
+  const triggerStart = upToCursor.lastIndexOf("@");
+  if (triggerStart === -1) return null;
+  const query = upToCursor.slice(triggerStart + 1);
+  if (/\s/.test(query)) return null;
+  if (triggerStart > 0 && !/\s/.test(text[triggerStart - 1])) return null;
+  return { triggerStart, query };
+}

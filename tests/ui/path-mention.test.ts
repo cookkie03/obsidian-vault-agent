@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { FakeVaultFS } from "../fixtures/fake-vault-fs";
-import { listAllPaths, fuzzyMatchPaths } from "../../src/ui/path-mention";
+import { listAllPaths, fuzzyMatchPaths, detectMentionTrigger } from "../../src/ui/path-mention";
 
 describe("path mention", () => {
   it("lists every file path in the vault", async () => {
@@ -17,5 +17,30 @@ describe("path mention", () => {
 
   it("returns no matches when the query is not a subsequence", () => {
     expect(fuzzyMatchPaths(["Projects/Roadmap.md"], "xyz")).toEqual([]);
+  });
+});
+
+describe("detectMentionTrigger", () => {
+  it("detects an active @ trigger at the cursor with its query", () => {
+    const text = "hello @pro";
+    expect(detectMentionTrigger(text, text.length)).toEqual({ triggerStart: 6, query: "pro" });
+  });
+
+  it("detects a bare @ with an empty query", () => {
+    expect(detectMentionTrigger("@", 1)).toEqual({ triggerStart: 0, query: "" });
+  });
+
+  it("returns null once the cursor has moved past the mention word", () => {
+    const text = "hello @pro continue";
+    expect(detectMentionTrigger(text, text.length)).toBeNull();
+  });
+
+  it("returns null when @ is glued to a preceding word (not a mention)", () => {
+    const text = "foo@bar";
+    expect(detectMentionTrigger(text, text.length)).toBeNull();
+  });
+
+  it("returns null when there is no @ before the cursor", () => {
+    expect(detectMentionTrigger("hello there", 11)).toBeNull();
   });
 });

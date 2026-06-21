@@ -6,14 +6,19 @@ import { parseCommand, isBuiltInCommand } from "../agent/commands";
 import { resolveSkillInvocation, listSkills } from "../agent/skills";
 import { listSessions, loadSession, saveSession, ChatSession } from "../storage/chat-sessions";
 import { compactMessages } from "../agent/context-budget";
-import { listAllPaths, fuzzyMatchPaths } from "./path-mention";
+import { listAllPaths, fuzzyMatchPaths, detectMentionTrigger } from "./path-mention";
+import { readNote } from "../tools/read-note";
+import { listFolder } from "../tools/list-folder";
 
 export const VIEW_TYPE_VAULT_AGENT = "vault-agent-side-panel";
 
 export class VaultAgentSidePanelView extends ItemView {
   private logEl!: HTMLElement;
   private inputEl!: HTMLInputElement;
+  private mentionDropdownEl!: HTMLElement;
   private currentSessionId = `${Date.now()}`;
+  private allPaths: string[] = [];
+  private pendingMentions: { path: string; content: string }[] = [];
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -36,22 +41,69 @@ export class VaultAgentSidePanelView extends ItemView {
     container.empty();
     this.logEl = container.createDiv({ cls: "vault-agent-log" });
     this.inputEl = container.createEl("input", { type: "text", placeholder: "Ask the agent or type / for commands..." });
+    this.mentionDropdownEl = container.createDiv({ cls: "vault-agent-mention-dropdown" });
+    this.mentionDropdownEl.style.display = "none";
 
     this.loop.onStep((event) => this.renderStepEvent(event));
+    this.allPaths = await listAllPaths(this.fs);
+
+    this.inputEl.addEventListener("input", () => this.updateMentionDropdown());
 
     this.inputEl.addEventListener("keydown", async (evt) => {
       if (evt.key !== "Enter") return;
       const text = this.inputEl.value;
       this.inputEl.value = "";
+      this.hideMentionDropdown();
       await this.handleInput(text);
     });
+  }
+
+  private updateMentionDropdown(): void {
+    const cursorPos = this.inputEl.selectionStart ?? this.inputEl.value.length;
+    const trigger = detectMentionTrigger(this.inputEl.value, cursorPos);
+    if (!trigger) {
+      this.hideMentionDropdown();
+      return;
+    }
+    const matches = fuzzyMatchPaths(this.allPaths, trigger.query).slice(0, 10);
+    this.mentionDropdownEl.empty();
+    if (matches.length === 0) {
+      this.hideMentionDropdown();
+      return;
+    }
+    this.mentionDropdownEl.style.display = "block";
+    for (const path of matches) {
+      const optionEl = this.mentionDropdownEl.createDiv({ text: path, cls: "vault-agent-mention-option" });
+      optionEl.addEventListener("click", () => this.selectMention(trigger.triggerStart, cursorPos, path));
+    }
+  }
+
+  private hideMentionDropdown(): void {
+    this.mentionDropdownEl.style.display = "none";
+    this.mentionDropdownEl.empty();
+  }
+
+  private async selectMention(triggerStart: number, cursorPos: number, path: string): Promise<void> {
+    const value = this.inputEl.value;
+    this.inputEl.value = value.slice(0, triggerStart) + value.slice(cursorPos);
+    this.hideMentionDropdown();
+
+    const isFolder = !this.allPaths.includes(path);
+    const injected = isFolder ? await listFolder(this.fs, path) : await readNote(this.fs, path);
+    this.pendingMentions.push({ path, content: JSON.stringify(injected) });
+    this.logEl.createDiv({ text: `📎 attached ${path}` });
   }
 
   private async handleInput(text: string): Promise<void> {
     const parsed = parseCommand(text);
     if (!parsed) {
       this.logEl.createDiv({ text: `> ${text}` });
-      await this.loop.send(text);
+      const mentions = this.pendingMentions;
+      this.pendingMentions = [];
+      const withMentions = mentions.length
+        ? `${text}\n\n${mentions.map((m) => `[${m.path}]\n${m.content}`).join("\n\n")}`
+        : text;
+      await this.loop.send(withMentions);
       return;
     }
 
