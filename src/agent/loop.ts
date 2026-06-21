@@ -1,4 +1,4 @@
-import { ChatMessage, ModelProvider, ToolCall } from "../provider/types";
+import { ChatMessage, ContentBlock, ModelProvider, ToolCall } from "../provider/types";
 import { ToolRegistry } from "../tools/registry";
 import { PendingChange, applyPendingChange } from "../tools/pending-change";
 import { ContextBudget } from "./context-budget";
@@ -37,8 +37,9 @@ export class AgentLoop {
     return this.messages;
   }
 
-  async send(userText: string): Promise<void> {
-    this.messages.push({ role: "user", content: [{ type: "text", text: userText }] });
+  async send(input: string | ContentBlock[]): Promise<void> {
+    const content: ContentBlock[] = typeof input === "string" ? [{ type: "text", text: input }] : input;
+    this.messages.push({ role: "user", content });
     await this.runUntilSuspendOrFinal();
   }
 

@@ -70,6 +70,28 @@ describe("AgentLoop", () => {
     expect(lastCallMessages.at(-1).content[0].text).toMatch(/not now/);
   });
 
+  it("accepts image content blocks alongside text when sending a message", async () => {
+    const fs = new FakeVaultFS();
+    const registry = new ToolRegistry(fs, await buildSearchIndex(fs));
+    const chat = vi.fn().mockResolvedValueOnce(response({ content: [{ type: "text", text: "I see a cat." }] }));
+    const provider: ModelProvider = { chat };
+    const loop = new AgentLoop(provider, registry, new ContextBudget(), { compactThresholdPercent: 90 });
+
+    await loop.send([
+      { type: "text", text: "what is this?" },
+      { type: "image", base64: "AAA", mimeType: "image/png" },
+    ]);
+
+    const sentMessages = chat.mock.calls[0][0];
+    expect(sentMessages.at(-1)).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "what is this?" },
+        { type: "image", base64: "AAA", mimeType: "image/png" },
+      ],
+    });
+  });
+
   it("emits an error event and does not crash when the provider throws", async () => {
     const fs = new FakeVaultFS();
     const registry = new ToolRegistry(fs, await buildSearchIndex(fs));

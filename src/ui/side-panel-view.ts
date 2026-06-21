@@ -1,6 +1,7 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import { AgentLoop, StepEvent } from "../agent/loop";
 import { VaultFS } from "../tools/vault-fs";
+import { ContentBlock, ImageContentBlock } from "../provider/types";
 import { stepEventToLabel, formatDiffPreview } from "./render-helpers";
 import { parseCommand, isBuiltInCommand } from "../agent/commands";
 import { resolveSkillInvocation, listSkills } from "../agent/skills";
@@ -12,6 +13,15 @@ import { listFolder } from "../tools/list-folder";
 
 export const VIEW_TYPE_VAULT_AGENT = "vault-agent-side-panel";
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 export class VaultAgentSidePanelView extends ItemView {
   private logEl!: HTMLElement;
   private inputEl!: HTMLInputElement;
@@ -19,6 +29,7 @@ export class VaultAgentSidePanelView extends ItemView {
   private currentSessionId = `${Date.now()}`;
   private allPaths: string[] = [];
   private pendingMentions: { path: string; content: string }[] = [];
+  private pendingImages: ImageContentBlock[] = [];
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -48,6 +59,9 @@ export class VaultAgentSidePanelView extends ItemView {
     this.allPaths = await listAllPaths(this.fs);
 
     this.inputEl.addEventListener("input", () => this.updateMentionDropdown());
+    this.inputEl.addEventListener("paste", (evt) => this.handlePaste(evt));
+    this.inputEl.addEventListener("drop", (evt) => this.handleDrop(evt));
+    this.inputEl.addEventListener("dragover", (evt) => evt.preventDefault());
 
     this.inputEl.addEventListener("keydown", async (evt) => {
       if (evt.key !== "Enter") return;
@@ -83,6 +97,31 @@ export class VaultAgentSidePanelView extends ItemView {
     this.mentionDropdownEl.empty();
   }
 
+  private async handlePaste(evt: ClipboardEvent): Promise<void> {
+    const items = evt.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (!item.type.startsWith("image/")) continue;
+      const file = item.getAsFile();
+      if (file) await this.addPendingImage(file);
+    }
+  }
+
+  private async handleDrop(evt: DragEvent): Promise<void> {
+    evt.preventDefault();
+    const files = evt.dataTransfer?.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith("image/")) await this.addPendingImage(file);
+    }
+  }
+
+  private async addPendingImage(file: File): Promise<void> {
+    const base64 = await blobToBase64(file);
+    this.pendingImages.push({ type: "image", base64, mimeType: file.type });
+    this.logEl.createDiv({ text: `📎 image attached (${file.type})` });
+  }
+
   private async selectMention(triggerStart: number, cursorPos: number, path: string): Promise<void> {
     const value = this.inputEl.value;
     this.inputEl.value = value.slice(0, triggerStart) + value.slice(cursorPos);
@@ -99,11 +138,15 @@ export class VaultAgentSidePanelView extends ItemView {
     if (!parsed) {
       this.logEl.createDiv({ text: `> ${text}` });
       const mentions = this.pendingMentions;
+      const images = this.pendingImages;
       this.pendingMentions = [];
+      this.pendingImages = [];
+      if (!text && mentions.length === 0 && images.length === 0) return;
       const withMentions = mentions.length
         ? `${text}\n\n${mentions.map((m) => `[${m.path}]\n${m.content}`).join("\n\n")}`
         : text;
-      await this.loop.send(withMentions);
+      const content: ContentBlock[] = withMentions ? [{ type: "text", text: withMentions }, ...images] : images;
+      await this.loop.send(content);
       return;
     }
 
