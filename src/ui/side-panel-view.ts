@@ -6,7 +6,6 @@ import { stepEventToLabel, formatDiffPreview } from "./render-helpers";
 import { parseCommand, isBuiltInCommand } from "../agent/commands";
 import { resolveSkillInvocation, listSkills } from "../agent/skills";
 import { listSessions, loadSession, saveSession, ChatSession } from "../storage/chat-sessions";
-import { compactMessages } from "../agent/context-budget";
 import { listAllPaths, fuzzyMatchPaths, detectMentionTrigger } from "./path-mention";
 import { readNote } from "../tools/read-note";
 import { listFolder } from "../tools/list-folder";
@@ -186,9 +185,7 @@ export class VaultAgentSidePanelView extends ItemView {
       return;
     }
     if (command === "compact") {
-      const compacted = await compactMessages((this.loop as any).provider, this.loop.getMessages(), 10);
-      this.logEl.createDiv({ text: "Compacted older messages into a summary." });
-      void compacted;
+      await this.loop.compactNow();
       return;
     }
     if (command === "help") {
