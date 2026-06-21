@@ -1,7 +1,7 @@
 import { ChatMessage, ContentBlock, ModelProvider, ToolCall } from "../provider/types";
 import { ToolRegistry } from "../tools/registry";
 import { PendingChange, applyPendingChange } from "../tools/pending-change";
-import { ContextBudget } from "./context-budget";
+import { ContextBudget, compactMessages } from "./context-budget";
 import { AgentConfig } from "../storage/agent-config";
 
 export type StepEvent =
@@ -9,7 +9,8 @@ export type StepEvent =
   | { type: "tool-result"; name: string }
   | { type: "pending-change"; change: PendingChange }
   | { type: "final"; text: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "compact" };
 
 interface SuspendedState {
   toolCallId: string;
@@ -26,7 +27,9 @@ export class AgentLoop {
     private provider: ModelProvider,
     private registry: ToolRegistry,
     private budget: ContextBudget,
-    private config: AgentConfig
+    private config: AgentConfig,
+    private maxContextTokens: number = 8000,
+    private keepLastN: number = 10
   ) {}
 
   onStep(handler: (event: StepEvent) => void): void {
@@ -66,6 +69,15 @@ export class AgentLoop {
     await this.runUntilSuspendOrFinal();
   }
 
+  async compactNow(): Promise<void> {
+    await this.runCompact();
+  }
+
+  private async runCompact(): Promise<void> {
+    this.messages = await compactMessages(this.provider, this.messages, this.keepLastN);
+    this.emit({ type: "compact" });
+  }
+
   private emit(event: StepEvent): void {
     for (const handler of this.handlers) handler(event);
   }
@@ -82,6 +94,10 @@ export class AgentLoop {
 
       this.budget.recordUsage(response.usage.totalTokens);
       this.messages.push(response.message);
+
+      if (this.budget.shouldAutoCompact(this.maxContextTokens, this.config)) {
+        await this.runCompact();
+      }
 
       const toolCalls: ToolCall[] = response.message.toolCalls ?? [];
       if (toolCalls.length === 0) {

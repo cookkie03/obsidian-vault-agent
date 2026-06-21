@@ -92,6 +92,51 @@ describe("AgentLoop", () => {
     });
   });
 
+  it("auto-compacts older messages once usage crosses the configured threshold", async () => {
+    const fs = new FakeVaultFS();
+    const registry = new ToolRegistry(fs, await buildSearchIndex(fs));
+    const chat = vi.fn()
+      .mockResolvedValueOnce(response({ content: [{ type: "text", text: "first reply" }] }))
+      .mockResolvedValueOnce(response({ content: [{ type: "text", text: "Summary of earlier turns." }] }));
+    const provider: ModelProvider = { chat };
+    const events: any[] = [];
+    const loop = new AgentLoop(provider, registry, new ContextBudget(), { compactThresholdPercent: 90 }, 2, 1);
+    loop.onStep((e) => events.push(e));
+
+    await loop.send("hello");
+
+    expect(events.map((e) => e.type)).toEqual(["compact", "final"]);
+    expect(loop.getMessages()).toEqual([
+      { role: "system", content: [{ type: "text", text: "Summary of earlier turns." }] },
+      { role: "assistant", content: [{ type: "text", text: "first reply" }] },
+    ]);
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+
+  it("compactNow() compacts on demand regardless of usage threshold", async () => {
+    const fs = new FakeVaultFS();
+    const registry = new ToolRegistry(fs, await buildSearchIndex(fs));
+    const chat = vi.fn()
+      .mockResolvedValueOnce(response({ content: [{ type: "text", text: "first reply" }] }))
+      .mockResolvedValueOnce(response({ content: [{ type: "text", text: "Manual summary." }] }));
+    const provider: ModelProvider = { chat };
+    const events: any[] = [];
+    const loop = new AgentLoop(provider, registry, new ContextBudget(), { compactThresholdPercent: 90 }, 8000, 1);
+    loop.onStep((e) => events.push(e));
+
+    await loop.send("hello");
+    expect(events.map((e) => e.type)).toEqual(["final"]);
+
+    await loop.compactNow();
+
+    expect(events.map((e) => e.type)).toEqual(["final", "compact"]);
+    expect(loop.getMessages()).toEqual([
+      { role: "system", content: [{ type: "text", text: "Manual summary." }] },
+      { role: "assistant", content: [{ type: "text", text: "first reply" }] },
+    ]);
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+
   it("emits an error event and does not crash when the provider throws", async () => {
     const fs = new FakeVaultFS();
     const registry = new ToolRegistry(fs, await buildSearchIndex(fs));

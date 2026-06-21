@@ -15,6 +15,10 @@ describe("stepEventToLabel", () => {
       "⏸ waiting for approval: create a.md"
     );
   });
+
+  it("labels a compact event", () => {
+    expect(stepEventToLabel({ type: "compact" })).toBe("♻️ compacted older messages into a summary");
+  });
 });
 
 describe("formatDiffPreview", () => {

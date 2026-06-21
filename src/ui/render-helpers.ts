@@ -13,6 +13,8 @@ export function stepEventToLabel(event: StepEvent): string {
       return event.text;
     case "error":
       return `⚠ ${event.message}`;
+    case "compact":
+      return "♻️ compacted older messages into a summary";
   }
 }
 
